@@ -9,18 +9,11 @@
 
 class SessionHandler
 
-  @sessions = Hash.new
-
 
   ##
   # Establishes connection to a FHIR server by instantiating +FhirServerInteraction+
   # 
-  # Creates new +Hash+ to allow for server-side, session-specific data storage and access in 
-  # memory 
-  # 
-  # Updates active timer for this session to prevent premature pruning
-  # 
-  # Calls private +prune+ method to weed out old sessions
+  # Updates active timer for this session's connection to prevent premature pruning
   #
   # *Params*
   #
@@ -37,22 +30,20 @@ class SessionHandler
   #   +FhirServerInteraction+ and replaces it as the default OAuth2 secret for this session
 
   def self.establish(session_id, url = nil, oauth2_id = nil, oauth2_secret = nil)
+    conkey = session_id + "--connection"
     if established?(session_id)
-      @sessions[session_id][:active] = Time.now
-      prune
+      client = Rails.cache.read(conkey)
     else
-      prune
-      @sessions[session_id] = { active: Time.now }
-      @sessions[session_id][:fsi] = FhirServerInteraction.new(url, oauth2_id, oauth2_secret)
-      @sessions[session_id][:ss] = Hash.new
+      client = FhirServerInteraction.new(url, oauth2_id, oauth2_secret)
     end
+    Rails.cache.write(conkey, client, expires_in: @expiry_time)
   end
 
 
   ##
   # Resets +FhirServerInteraction+ connection according to the provided params
   # 
-  # Updates active timer for this session to prevent premature pruning
+  # Updates active timer for this session's connection to prevent premature pruning
   # 
   # *Params*
   #
@@ -68,23 +59,26 @@ class SessionHandler
   #   +FhirServerInteraction+ and replaces it as the default OAuth2 secret for this session
 
   def self.reset_connection(session_id, url = nil, oauth2_id = nil, oauth2_secret = nil)
-    active(session_id)
-    @sessions[session_id][:fsi].connect(url, oauth2_id, oauth2_secret)
+    conkey = session_id + "--connection"
+    new_connection = Rails.cache.read(conkey).connect(url, oauth2_id, oauth2_id)
+    Rails.cache.write(conkey, new_connection, expires_in: @expiry_time)
   end
 
 
   ##
   # Gets +FHIR::Client+ instance associated with the provided +session_id+
   # 
-  # Updates active timer for this session to prevent premature pruning
+  # Updates active timer for this session's connection to prevent premature pruning
   # 
   # *Params*
   #
   # * +session_id+ - Indicates which session to get the +FHIR::Client+ from (use +session.id+)
+  # 
+  # *Returns* - This session's instance of FHIR::Client
 
   def self.fhir_client(session_id)
     active(session_id)
-    @sessions[session_id][:fsi].client
+    Rails.cache.read(session_id + "--connection").client
   end
 
 
@@ -95,7 +89,7 @@ class SessionHandler
   # Basically a helper method to provide more functionality on top of what the +FHIR::Client+ can 
   # already do
   # 
-  # Updates active timer for this session to prevent premature pruning
+  # Updates active timer for this session's connection to prevent premature pruning
   # 
   # *Params*
   # 
@@ -115,14 +109,12 @@ class SessionHandler
 
   def self.all_resources(session_id, klasses, search = {})
     active(session_id)
-    @sessions[session_id][:fsi].all_resources(klass, search)
+    Rails.cache.read(session_id + "--connection").all_resources(klass, search)
   end
 
 
   ##
   # Stores +value+ in this sessions in-memory storage to be later retrieved by +key+
-  # 
-  # Updates active timer for this session to prevent premature pruning
   # 
   # *Params*
   # 
@@ -133,15 +125,14 @@ class SessionHandler
   # * +value+ - The value to store for future access
 
   def self.store(session_id, key, value)
-    active(session_id)
-    @sessions[session_id][:ss][key] = value
+    Rails.cache.write(session_id + "--" + key, value, expires_in: @expiry_time)
   end
 
 
   ##
   # Retrieves a value from storage by its +key+
   # 
-  # Updates active timer for this session to prevent premature pruning
+  # Updates active timer for this value to prevent premature pruning
   # 
   # *Params*
   #
@@ -150,54 +141,35 @@ class SessionHandler
   # *Returns* - A specific value from storage that was stored with the provided +key+
 
   def self.from_storage(session_id, key)
-    active(session_id)
-    @sessions[session_id][:ss][key]
+    active(session_id, key)
+    Rails.cache.read(session_id + "--" + key)
   end
 
 
   ##
-  # Gets the specified session's entire storage hash
-  # 
-  # Updates active timer for this session to prevent premature pruning
-  # 
-  # *Params*
-  # 
-  # * +session_id+ - Indicates which session's storage hash to retrieve (use +session.id+)
-  # 
-  # *Returns* - A hash of every key-value pairing this session has stored
-
-  def self.storage(session_id)
-    active(session_id)
-    @sessions[session_id][:ss]
-  end
-
-
-  ##
-  # Updates last active time for session to prevent premature pruning
+  # Updates last active time for value of +key+ to prevent premature pruning. Defaults to refresh 
+  # connection if no key is specified.
   # 
   # *Params*
   #
-  # * +session_id+ - indicates which session to refresh active status for (use +session.id+)
+  # * +session_id+ - indicates which session to refresh +key+ active status for (use +session.id+)
+  # 
+  # * +key+ - _Optional_ _param_, indicates which key to refresh expiration timer for, refreshes  
+  #   connection timer if nil/undefined
 
-  def self.active(session_id)
-    if established?(session_id)
-      @sessions[session_id][:active] = Time.now
-    else
-      establish(session_id)
-    end
+  def self.active(session_id, key = nil)
+    cache_key = session_id + "--" + (key.nil? ? "connection" : key)
+    Rails.cache.write(cache_key, Rails.cache.read(cache_key), expires_in: @expiry_time)
   end
 
   private
 
-  # Number of hours a session can go stale before becoming liable to get wiped
-  @safe_hours = 2
+  # This instance variable determines how long the Rails cache will hold onto information
+  @expiry_time = 30.minutes
 
-  def self.prune
-    @sessions.delete_if{ |id, session| (Time.now - session[:active]) > (@safe_hours * 3600) }
-  end
-
-  def self.established?(session_id)
-    !@sessions[session_id].nil?
+  def self.established?(session_id, key = nil)
+    cache_key = session_id + "--" + (key.nil? ? "connection" : key)
+    Rails.cache.read(cache_key).nil?
   end
 
 end
