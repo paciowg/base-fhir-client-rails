@@ -109,7 +109,7 @@ class SessionHandler
 
   def self.all_resources(session_id, klasses, search = {})
     active(session_id)
-    Rails.cache.read(session_id + "--connection").all_resources(klass, search)
+    Rails.cache.read(session_id + "--connection").all_resources(klasses, search)
   end
 
 
