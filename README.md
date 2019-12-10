@@ -21,10 +21,10 @@ pages, ready to be customized.
 
 ### Model Configuration
 
-To track session-specific server-side (including FHIR server connection via 
-the [FHIR::Client gem](https://github.com/fhir-crucible/fhir_client) and 
-session-based storage using Rails.cache), this boilerplate is configured to 
-use it's own custom 
+To track session-specific info on the server (including a FHIR server 
+connection via the [FHIR::Client 
+gem](https://github.com/fhir-crucible/fhir_client) and session-based storage 
+using Rails.cache), this boilerplate is configured to use it's own custom 
 [SessionHandler](http://htmlpreview.github.io/?https://github.com/paciowg/base-fhir-client-rails/blob/master/doc/SessionHandler.html)
 
 ### Running
