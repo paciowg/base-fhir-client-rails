@@ -170,12 +170,12 @@
                 <ul>
                     <li>
                         You can customize this site's color scheme by altering the 
-                        <code>$color</code> variables at the top of 
-                        <code>app/assets/stylesheets/application.scss</code>
+                        <code>$color</code> variables inside 
+                        <code>app/assets/stylesheets/colors.scss</code>
                     </li>
                     <li>
-                        These variables are defined before importing bootstrap, which allows you 
-                        to alter bootstrap's 
+                        These variables are imported before importing bootstrap, which allows them 
+                        to alter bootstrap's default
                         <a href="https://getbootstrap.com/docs/4.0/utilities/colors/" 
                                 target="_blank">
                                 color definitions
@@ -183,10 +183,9 @@
                     </li>
                     <li>
                         If you don't want your color scheme to override bootstrap's, simply delete 
-                        those <code>$color</code> definitions before 
-                        <code>@import 'bootstrap';</code> at the top of 
-                        <code>app/assets/stylesheets/application.scss</code> and either define 
-                        your colors after it or use the bootstrap color scheme
+                        those <code>$color</code> definitions in
+                        <code>app/assets/stylesheets/colors.scss</code> and either define your own 
+                        colors there or use the default bootstrap color scheme
                     </li>
                 </ul>
             </li>
